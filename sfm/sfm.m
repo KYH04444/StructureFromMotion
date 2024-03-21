@@ -3,15 +3,38 @@ addpath('C:\Users\kyh99\AppData\Roaming\MathWorks\MATLAB Add-Ons\Collections\vlf
 addpath('C:\Users\kyh99\Desktop\sfm\');
 
 result = extractMatcher('0001.jpg', '0002.jpg');
-[forFindRt_1, forFindRt_2, bestE, bestInliers,inf] = ransac(result.Q1, result.Q2, 0.000179);
+[forFindRt_1, forFindRt_2, bestE, bestInlier_idx,inf] = ransac(result.Q1, result.Q2, 0.000179);
 [R1, t1, R2, t2] = Emat2Rt(bestE);
-[R,t] = chooseRt(forFindRt_1, forFindRt_2, R1, t1, R2, t2);
-fprintf('best R,t =\n');disp(R);disp(t);
+
 fprintf('R1:\n');disp(R1);
 fprintf('t1:\n');disp(t1);
 fprintf('R2:\n');disp(R2);
 fprintf('t2:\n');disp(t2);
+% fprintf('R:\n');disp(R);
+% fprintf('t:\n');disp(t);
+Data = [];
 
+for i=1:3
+    [beforePmatrix, curPmatrix, P_3D_1] = triangulation(R1, t1, forFindRt_1(1:2,i), forFindRt_2(1:2,i), true);
+    [~, ~, P_3D_2] = triangulation(R1, t2, forFindRt_1(1:2,i), forFindRt_2(1:2,i), true);
+    [~, ~, P_3D_3] = triangulation(R2, t1, forFindRt_1(1:2,i), forFindRt_2(1:2,i), true);
+    [~, ~, P_3D_4] = triangulation(R2, t2, forFindRt_1(1:2,i), forFindRt_2(1:2,i), true);
+        if (P_3D_1(3) > 0)
+            P_3D = P_3D_1;
+        elseif (P_3D_2( 3) > 0)
+            P_3D = P_3D_2;
+        elseif (P_3D_3( 3) > 0)
+            P_3D = P_3D_3;
+        elseif (P_3D_4( 3) > 0)
+            P_3D = P_3D_4;
+        end
+    Data(i,1:6) = [forFindRt_1(1:2,i)',1, P_3D'];
+    % fprintf("Point on 3D: \n ");disp(P_3D);
+end
+
+% disp(Data);
+ProjectionMatrix=PerspectiveThreePoint(Data);
+fprintf('ProjectionMatrix: \n');disp(ProjectionMatrix);
 % Inliers 끼리 matching 확인차원으로------------------------------
 img1 = imread('0001.jpg');
 img2 = imread('0002.jpg');
@@ -28,60 +51,67 @@ imshow(img_combined);
 hold on;
 offset = size(img1, 2);
 
-for i = 1:length(bestInliers)
-    point1 = result.Q1(1:2, bestInliers(i)); 
-    point2 = result.Q2(1:2, bestInliers(i)); 
+for i = 1:length(bestInlier_idx)
+    point1 = result.Q1(1:2, bestInlier_idx(i)); 
+    point2 = result.Q2(1:2, bestInlier_idx(i)); 
     point2(1) = point2(1) + offset; 
     line([point1(1), point2(1)], [point1(2), point2(2)], 'Color', 'r', 'LineWidth', 1.5);
 end
-% fprintf('%d\n',bestInliers);
 hold off;
+% Inliers 끼리 matching 확인차원으로------------------------------
 
-function [R, t] = chooseRt(forFindRt_1, forFindRt_2, R1, t1, R2, t2)
+function [beforePmatrix, curPmatrix, P_3D] = triangulation(R, t, point2D_1, point2D_2, init)
 
-    dis_1 = 0;
-    dis_2 = 0;
-    dis_3 = 0;
-    dis_4 = 0;
-    
-    for i = 1:size(forFindRt_1, 2)
-        tr_1 = R1 * forFindRt_1(:, i) + t1;
-        tr_2 = R1 * forFindRt_1(:, i) + t2;
-        tr_3 = R2 * forFindRt_1(:, i) + t1;
-        tr_4 = R2 * forFindRt_1(:, i) + t2;
+    K =[1698.873755 0.000000 971.7497705;
+        0.000000 1698.8796645 647.7488275;
+        0.000000 0.000000 1.000000]; 
+    beforePmatrix= [];
+    if init == true
+        R_init = eye(3);
+        t_init = zeros(3,1);
+        P_init = K * [R_init, t_init];
+        beforePmatrix = P_init;    
+    end
+
+        curPmatrix = K*[R,t];
         
-        dis_1 = dis_1 + norm(tr_1 - forFindRt_2(:, i));
-        dis_2 = dis_2 + norm(tr_2 - forFindRt_2(:, i));
-        dis_3 = dis_3 + norm(tr_3 - forFindRt_2(:, i));
-        dis_4 = dis_4 + norm(tr_4 - forFindRt_2(:, i));
-    end
-    [M, I] = min([dis_1, dis_2, dis_3, dis_4]);
-    fprintf('min array = \n');disp([dis_1, dis_2, dis_3, dis_4]);
+        x_1 = point2D_1(1, 1);
+        y_1 = point2D_1(2, 1);
 
-    if I == 1
-        R = R1; t = t1;
-    elseif I == 2
-        R = R1; t = t2;
-    elseif I == 3
-        R = R2; t = t1;
-    else
-        R = R2; t = t2;
-    end
+        x_2 = point2D_2(1, 1);
+        y_2 = point2D_2(2, 1);
+
+        curP1 = curPmatrix(1,:);
+        curP2 = curPmatrix(2,:);
+        curP3 = curPmatrix(3,:);
+        
+        beforeP1 = beforePmatrix(1,:);
+        beforeP2 = beforePmatrix(2,:);
+        beforeP3 = beforePmatrix(3,:);
+
+        A = [x_1*curP3 - curP1;
+             y_1*curP3 - curP2;
+             x_2*beforeP3 - beforeP1;
+             y_2*beforeP3 - beforeP2;];
+
+    [~, ~, V] = svd(A);
+    P_3D = V(:, end);
+    P_3D = P_3D ./ P_3D(4); % 동차 좌표를 일반 좌표로 변환
+    
+    P_3D = P_3D(1:3); % 마지막 요소(동차 좌표의 스케일) 제거
+    beforePmatrix = curPmatrix;
 end
 
-function [R1, t1, R2, t2] = Emat2Rt(bestE)
-    [U, ~, V] = svd(bestE);
-    % D = diag([1, 1, 0]);
-    W = [0 -1 0; 1 0 0; 0 0 0]; 
-    t = U(:, end);
 
+function [R1, t1, R2, t2] = Emat2Rt(bestE)
+    % D = diag([1, 1, 0]);
+    [U, ~, V] = svd(bestE);
+    
+    W = [0 -1 0; 1 0 0; 0 0 0]; 
     R1 = U*W*V';
     R2 = U*W'*V';
     t1 = U(:,3);
     t2 = -U(:,3);
-
-    t1 = t;
-    t2 = -t;
 end
 
 function result = extractMatcher(img1Path, img2Path)
@@ -109,44 +139,23 @@ function result = extractMatcher(img1Path, img2Path)
     
     Q1 = [matchedPoints1; ones(1, size(matchedPoints1, 2))];
     Q2 = [matchedPoints2; ones(1, size(matchedPoints2, 2))];
-
-    % fprintf('q1 size: %d\n',size(Q1, 1));
-    % fprintf('value of Q2[3,1]: %d\n', Q2(3,1));
-    % ----------------------------plot%----------------------------
-    % subplot(1, 2, 1);
-    % imshow(uint8(img1));
-    % hold on;
-    % plot(f1(1, matches(1, :)), f1(2, matches(1, :)), 'b*');
-    % 
-    % subplot(1, 2, 2);
-    % imshow(uint8(img2));
-    % hold on;
-    % plot(f2(1, matches(2, :)), f2(2, matches(2, :)), 'r*');
-    % ---------------img에서 score 제일 높은 놈 찾기---------------
-    % [maxScore, maxIndex] = max(score); 
-    % bestMatchIndex = matches(:, maxIndex);
-    % bestMatchFeature1 = f1(:, bestMatchIndex(1));
-    % bestMatchFeature2 = f2(:, bestMatchIndex(2));
-    % fprintf('가장 높은 스코어: %f\n', maxScore);
-    % fprintf('img1의 pixel좌표: (%f, %f)\n', bestMatchFeature1(1), bestMatchFeature1(2));
-    % fprintf('img2의 pixel좌표: (%f, %f)\n', bestMatchFeature2(1), bestMatchFeature2(2));
-
     result.Q1 = Q1;
     result.Q2 = Q2;
 end
 
-function [forFindRt_1, forFindRt_2, bestE, bestInliers, minError] = ransac(Q1, Q2, threshold)
+function [forFindRt_1, forFindRt_2, bestE, bestInlier_idx, minError] = ransac(Q1, Q2, threshold)
 p = 0.99;
-iter = log(1-p)/log(1/9); % N=Log(1-p)/Log(1-(1-e)^s)
+iter = log(1-p)/log(1-(1-0.5)^5); % N=Log(1-p)/Log(1-(1-e)^s)
 minError = inf;
-K =[1698.873755 0.000000     971.7497705
-0.000000    1698.8796645 647.7488275
+K =[1698.873755 0.000000     971.7497705;
+0.000000    1698.8796645 647.7488275;
 0.000000    0.000000     1.000000]; %intrinsic Parameter
 K_inv = inv(K); % (=k.inv())
 K_inv_T = K_inv'; % (=k.inv().transpose())
-    bestNumInliers = 0;
+
+    bestNumInliers = 3;
     bestE = [];
-    bestInliers = [];
+    bestInlier_idx = [];
     forHistogram = [];
 
     forFindRt_1 = [];
@@ -175,17 +184,17 @@ K_inv_T = K_inv'; % (=k.inv().transpose())
                 % forHistogram = [forHistogram, error]; % iter 많이하고 histogram을 그려서 threshold 값 설정
                 if error < threshold
                     % inliers = [inliers, k];
-                    curForFindRt_1 = [curForFindRt_1, Q1(:, k)]; % Add the inlier from img1
-                    curForFindRt_2 = [curForFindRt_2, Q2(:, k)]; % Add the inlier from img2
+                    curForFindRt_1 = [curForFindRt_1, Q1(:, k)]; 
+                    curForFindRt_2 = [curForFindRt_2, Q2(:, k)];
                     currentInliers = [currentInliers, k];
                 end
             end
-            if length(currentInliers) > bestNumInliers ||(length(currentInliers) == bestNumInliers && currentError < minError)
+            if (length(currentInliers) == bestNumInliers && currentError < minError)
                 bestNumInliers = length(currentInliers);
                 bestE = E;
-                bestInliers = currentInliers;
+                bestInlier_idx = currentInliers;
                 forFindRt_1 = curForFindRt_1;
-                forFindRt_2 = curForFindRt_2
+                forFindRt_2 = curForFindRt_2;
                 minError = currentError; % 극한의 Inlier 찾기
             end
         end
