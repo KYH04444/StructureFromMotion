@@ -7,3 +7,6 @@
 ![image](https://github.com/KYH04444/StructureFromMotion/assets/121211187/24ba24f7-12fd-42ea-96b1-f82e3f856998)
 
 # R|t from Essential Matrix 
+
+# Reference
+https://cvgl.stanford.edu/teaching/cs231a_winter1415/lecture/lecture9_fitting_matching_notes.pdf
